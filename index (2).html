@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Planetary Orbit Simulator | Geodetic Astronomy</title>
+
+  <!-- CSS: visual presentation; physics is implemented in JavaScript below. -->
+  <style>
+    :root { color-scheme: dark; --bg:#08111f; --card:#132238; --border:#2b435c; --text:#edf6ff; --muted:#a6bbd1; --blue:#57d9f1; --red:#ff8b96; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:radial-gradient(ellipse at top left,#183450,transparent 55%),var(--bg); color:var(--text); font:15px/1.5 system-ui,Arial,sans-serif; }
+    main { max-width:1250px; padding:28px 18px 48px; margin:auto; }
+    h1 { margin:0 0 6px; font-size:clamp(27px,4vw,42px); }
+    h2 { font-size:18px; margin:0 0 15px; }
+    p { margin:0 0 20px; color:var(--muted); }
+    .kicker { color:var(--blue); text-transform:uppercase; font-size:11px; letter-spacing:2px; font-weight:800; }
+    .layout { display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:16px; }
+    .card { background:linear-gradient(150deg,#16273f,#0d192a); border:1px solid var(--border); border-radius:16px; padding:19px; min-width:0; }
+    #canvas { display:block; width:100%; height:480px; background:radial-gradient(ellipse at center,#192c43,#071321); border:1px solid #29445f; border-radius:12px; }
+    .legend { display:flex; flex-wrap:wrap; gap:16px; font-size:12px; color:#d1e2f4; padding:13px 0 4px; }
+    .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; background:#7a9dbe; }
+    .blue { background:var(--blue); } .red { background:var(--red); } .purple { background:#b3a2f6; }
+    .values { display:grid; grid-template-columns:repeat(4,1fr); gap:9px; margin-top:14px; }
+    .value,.fact { background:#101e31; border:1px solid #2c425c; border-radius:9px; padding:10px; }
+    .value small,.fact small { color:var(--muted); display:block; font-size:11px; }
+    .value strong,.fact strong { display:block; margin-top:3px; font-size:17px; font-variant-numeric:tabular-nums; }
+    label { display:flex; justify-content:space-between; gap:8px; margin:16px 0 3px; font-size:13px; }
+    label strong { color:var(--blue); }
+    input[type=range] { display:block; width:100%; accent-color:var(--blue); cursor:pointer; }
+    .ends { display:flex; justify-content:space-between; font-size:11px; color:#91a7bd; }
+    button { cursor:pointer; padding:11px; border:1px solid #41617b; border-radius:9px; background:#233a55; color:white; font:inherit; font-weight:700; }
+    button.primary { background:var(--blue); color:#041522; border:0; }
+    .buttons { display:grid; grid-template-columns:1fr 1fr; gap:9px; margin:22px 0; }
+    .facts { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+    .hint { font-size:12px; color:var(--muted); margin-top:20px; }
+    .bottom { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; }
+    .equations { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .equation { background:#0e1c30; border:1px solid #293f58; border-radius:8px; padding:12px; }
+    .equation small { display:block; color:var(--muted); }
+    .equation b { display:block; font-family:Georgia,serif; font-size:16px; margin-top:4px; font-weight:500; }
+    #bars { display:flex; align-items:end; gap:8px; height:125px; border-bottom:1px solid #557088; padding-top:8px; }
+    .slot { flex:1; text-align:center; font-size:11px; color:var(--muted); }
+    .bar { background:linear-gradient(#c2b3fc,#7866bd); width:100%; max-width:43px; height:3px; margin:0 auto 6px; border-radius:4px 4px 0 0; }
+    .stat { margin:9px 0 13px; color:var(--muted); font-size:13px; }
+    footer { color:#8da5bf; margin-top:18px; font-size:12px; }
+    @media (max-width:980px) { .layout,.bottom { grid-template-columns:1fr; } }
+    @media (max-width:580px) { .values,.equations { grid-template-columns:1fr 1fr; } #canvas { height:340px; } .card { padding:13px; } .value strong { font-size:14px; } }
+  </style>
+</head>
+<body>
+<main>
+  <div class="kicker">Geodetic Astronomy · Orbital Mechanics</div>
+  <h1>Planetary Orbit Simulator</h1>
+  <p>Newtonian gravity · Elliptical orbits · Kepler's laws · Velocity Verlet integration</p>
+
+  <div class="layout">
+    <section class="card">
+      <h2>Two-dimensional orbital plane (x, y)</h2>
+      <canvas id="canvas">This simulator requires an HTML5-capable browser.</canvas>
+      <div class="legend">
+        <span><i class="dot"></i> Elliptical path</span>
+        <span><i class="dot blue"></i> Velocity v</span>
+        <span><i class="dot red"></i> Acceleration a</span>
+        <span><i class="dot purple"></i> Equal-time swept area</span>
+      </div>
+      <div class="values">
+        <div class="value"><small>Sun distance</small><strong id="distance">—</strong></div>
+        <div class="value"><small>Speed</small><strong id="velocity">—</strong></div>
+        <div class="value"><small>Acceleration</small><strong id="acceleration">—</strong></div>
+        <div class="value"><small>Elapsed time</small><strong id="time">—</strong></div>
+      </div>
+    </section>
+
+    <aside class="card">
+      <h2>Simulation controls</h2>
+      <label for="ecc">Eccentricity <strong id="eText">0.35</strong></label>
+      <input type="range" id="ecc" min="0" max="0.85" step="0.01" value="0.35">
+      <div class="ends"><span>0 · circular</span><span>0.85 · elongated</span></div>
+
+      <label for="axis">Semi-major axis <strong id="aText">1.00 AU</strong></label>
+      <input type="range" id="axis" min="0.5" max="2" step="0.05" value="1">
+      <div class="ends"><span>0.50 AU</span><span>2.00 AU</span></div>
+
+      <label for="speed">Simulation speed <strong id="speedText">1.0×</strong></label>
+      <input type="range" id="speed" min="0.25" max="8" step="0.25" value="1">
+      <div class="ends"><span>0.25×</span><span>8×</span></div>
+
+      <div class="buttons">
+        <button class="primary" id="toggle">Pause</button>
+        <button id="reset">Reset orbit</button>
+      </div>
+      <div class="facts">
+        <div class="fact"><small>Orbital period T</small><strong id="period">—</strong></div>
+        <div class="fact"><small>Semi-major axis a</small><strong id="aVal">—</strong></div>
+        <div class="fact"><small>Perihelion</small><strong id="peri">—</strong></div>
+        <div class="fact"><small>Aphelion</small><strong id="aphe">—</strong></div>
+      </div>
+      <div class="hint">Ideal Sun–planet two-body model. The Sun is fixed at a focus; perturbations and relativistic corrections are neglected. Internal calculations use metres, kilograms and seconds.</div>
+    </aside>
+  </div>
+
+  <div class="bottom">
+    <section class="card">
+      <h2>Kepler's second law: equal areas in equal times</h2>
+      <p>Each coloured sector represents the area swept in Δt = T/8. The bars display numerical areas, not equally spaced angles.</p>
+      <div class="stat">Completed sectors: <b id="completed">0 / 8</b> · Area spread: <b id="spread">—</b></div>
+      <div id="bars"></div>
+      <p class="hint">For a central gravitational force, angular momentum and areal velocity are conserved: dA/dt = |r × v|/2.</p>
+    </section>
+    <section class="card">
+      <h2>Equations used in the simulation</h2>
+      <div class="equations">
+        <div class="equation"><small>Newton's gravitation</small><b>F = −GMm r / |r|³</b></div>
+        <div class="equation"><small>Acceleration vector</small><b>a = −GM r / |r|³</b></div>
+        <div class="equation"><small>Elliptical orbit</small><b>r = a(1 − e²)/(1 + e cos ν)</b></div>
+        <div class="equation"><small>Kepler's third law</small><b>T = 2π√(a³/GM)</b></div>
+        <div class="equation"><small>Vis-viva equation</small><b>v² = GM(2/r − 1/a)</b></div>
+        <div class="equation"><small>Kepler's second law</small><b>dA/dt = |r × v|/2</b></div>
+      </div>
+    </section>
+  </div>
+  <footer>Planetary Orbit Simulator · HTML + CSS + JavaScript in one offline file · SI units</footer>
+</main>
+
+<!-- JavaScript: gravitational physics, numerical integration and rendering. -->
+<script>
+"use strict";
+
+/*
+  PHYSICAL MODEL
+  --------------
+  The Sun is fixed at the origin of an inertial 2D Cartesian system.
+  The planet has negligible mass compared with the Sun (test-particle
+  approximation). We ignore other planets, drag and relativity.
+
+  All calculations are carried out in SI units:
+    distance in metres, time in seconds, mass in kilograms,
+    velocity in m/s and acceleration in m/s^2.
+
+  NEWTON'S UNIVERSAL LAW OF GRAVITATION
+  ------------------------------------
+    F = -G M m r / |r|^3
+    a = F/m = -G M r / |r|^3
+  The acceleration points to the Sun at every instant.
+
+  ELLIPTICAL ORBIT AND INITIAL CONDITIONS
+  ---------------------------------------
+    perihelion rp = a(1-e), aphelion ra = a(1+e)
+    period T = 2*pi*sqrt(a^3/(G M))
+    perihelion speed vp = sqrt(G M (1+e)/rp)
+  At t=0, r=(rp,0), v=(0,vp). This produces a prograde bound orbit.
+
+  NUMERICAL INTEGRATION: VELOCITY VERLET
+  -------------------------------------
+  Newton's second-order differential equation is integrated in
+  small fixed increments dt. For each step:
+    r_new = r + v*dt + (1/2)*a*dt^2
+    a_new = -G M r_new / |r_new|^3
+    v_new = v + (1/2)*(a+a_new)*dt
+  Velocity Verlet is second-order accurate and symplectic; unlike an
+  ordinary explicit Euler scheme, it has good long-term behaviour
+  for conservative orbital dynamics. We use smaller steps when e is high.
+
+  KEPLER'S SECOND LAW
+  -------------------
+  The gravitational force is central, giving zero torque about the Sun.
+  Consequently angular momentum is conserved and equal time intervals
+  correspond to equal swept areas. Every T/8 interval has the same
+  number of integration steps. The tiny area swept in one step is
+    delta_A = |x_old*y_new - y_old*x_new| / 2.
+  Adding these triangles gives each of the eight displayed sectors.
+*/
+const G = 6.67430e-11;                // m^3 kg^-1 s^-2
+const SOLAR_MASS = 1.98847e30;       // kg
+const AU = 149597870700;             // m
+const DAY = 86400;                   // s
+const MU = G * SOLAR_MASS;           // m^3/s^2
+const N_SECTORS = 8;
+const el = id => document.getElementById(id);
+const canvas = el("canvas");
+const ctx = canvas.getContext("2d");
+
+const s = {
+  e: 0.35, aAU: 1, speed: 1, playing: true,
+  r: [0, 0], v: [0, 0], acc: [0, 0], time: 0,
+  steps: 0, fractional: 0, sectors: [],
+  N: 16000, dt: 0, T: 0, a: 0,
+  lastFrame: 0, width: 0, height: 0
+};
+
+const norm = p => Math.hypot(p[0], p[1]);
+function acceleration(r) {
+  const d = norm(r);
+  return [-MU * r[0] / (d*d*d), -MU * r[1] / (d*d*d)];
+}
+function reset() {
+  s.N = s.e >= 0.75 ? 48000 : s.e >= 0.6 ? 32000 : 16000;
+  s.a = s.aAU * AU;
+  s.T = 2 * Math.PI * Math.sqrt(s.a**3 / MU);
+  s.dt = s.T / s.N;
+  const rp = s.a * (1 - s.e);
+  s.r = [rp, 0];
+  s.v = [0, Math.sqrt(MU * (1+s.e) / rp)];
+  s.acc = acceleration(s.r);
+  s.time = 0;
+  s.steps = 0;
+  s.fractional = 0;
+  s.sectors = [];
+  updateLabels();
+  draw();
+}
+
+function integrate() {
+  // Velocity Verlet: update position, then acceleration, then velocity.
+  const old = s.r;
+  const next = [
+    old[0] + s.v[0]*s.dt + 0.5*s.acc[0]*s.dt*s.dt,
+    old[1] + s.v[1]*s.dt + 0.5*s.acc[1]*s.dt*s.dt
+  ];
+  const newAcc = acceleration(next);
+  s.v = [
+    s.v[0] + 0.5*(s.acc[0]+newAcc[0])*s.dt,
+    s.v[1] + 0.5*(s.acc[1]+newAcc[1])*s.dt
+  ];
+  s.acc = newAcc;
+  s.r = next;
+  s.time += s.dt;
+
+  // Exactly N/8 steps define each equal-time swept sector.
+  const localStep = s.steps % s.N;
+  const stepsPerSector = s.N / N_SECTORS;
+  if (localStep === 0) s.sectors = [];
+  const index = Math.floor(localStep / stepsPerSector);
+  if (!s.sectors[index]) {
+    s.sectors[index] = { area:0, vertices:[old.slice()], complete:false };
+  }
+  const sector = s.sectors[index];
+  sector.area += Math.abs(old[0]*next[1] - old[1]*next[0]) / 2;
+  const within = (localStep + 1) % stepsPerSector;
+  if (within % Math.max(1, Math.floor(stepsPerSector/100)) === 0 || within === 0) {
+    sector.vertices.push(next.slice());
+  }
+  if (within === 0) sector.complete = true;
+  s.steps++;
+}
+
+function updateLabels() {
+  el("eText").textContent = s.e.toFixed(2);
+  el("aText").textContent = s.aAU.toFixed(2) + " AU";
+  el("speedText").textContent = s.speed.toFixed(2) + "×";
+  el("period").textContent = (s.T/DAY).toFixed(2) + " days";
+  el("aVal").textContent = s.aAU.toFixed(2) + " AU";
+  el("peri").textContent = (s.aAU*(1-s.e)).toFixed(3) + " AU";
+  el("aphe").textContent = (s.aAU*(1+s.e)).toFixed(3) + " AU";
+  el("distance").textContent = (norm(s.r)/AU).toFixed(3) + " AU";
+  el("velocity").textContent = (norm(s.v)/1000).toFixed(2) + " km/s";
+  el("acceleration").textContent = norm(s.acc).toFixed(5) + " m/s²";
+  el("time").textContent = (s.time/DAY).toFixed(1) + " d";
+
+  const complete = s.sectors.filter(sec => sec.complete);
+  el("completed").textContent = complete.length + " / 8";
+  if (complete.length >= 2) {
+    const areas = complete.map(sec => sec.area);
+    const mean = areas.reduce((x,y)=>x+y,0)/areas.length;
+    el("spread").textContent = ((Math.max(...areas)-Math.min(...areas))/mean*100).toFixed(4) + "%";
+  } else el("spread").textContent = "—";
+
+  const idealArea = Math.PI*s.a*s.a*Math.sqrt(1-s.e*s.e)/N_SECTORS;
+  el("bars").innerHTML = Array.from({length:8}, (_,i) => {
+    const sec = s.sectors[i];
+    const height = sec ? Math.max(3,Math.min(100,sec.area/idealArea*100)) : 3;
+    const opacity = sec ? (sec.complete ? 1 : .7) : .18;
+    return `<div class="slot"><div class="bar" style="height:${height}px;opacity:${opacity}"></div>${i+1}</div>`;
+  }).join("");
+}
+
+function resize() {
+  const box = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  s.width = box.width;
+  s.height = box.height;
+  canvas.width = Math.round(box.width*dpr);
+  canvas.height = Math.round(box.height*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  draw();
+}
+function draw() {
+  const w = s.width, h = s.height;
+  if (!w || !h) return;
+  ctx.clearRect(0,0,w,h);
+  const b = s.aAU*Math.sqrt(1-s.e*s.e);
+  const scale = Math.min((w-85)/(2*s.aAU),(h-105)/(2*Math.max(b,.65*s.aAU)));
+  // The Sun is at the focus, whereas the ellipse centre is at x=-a*e.
+  const px = p => [w/2+(p[0]/AU+s.aAU*s.e)*scale, h/2-p[1]/AU*scale];
+  const sun = px([0,0]);
+
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "#52748c80";
+  ctx.setLineDash([5,6]);
+  ctx.beginPath(); ctx.moveTo(0,sun[1]); ctx.lineTo(w,sun[1]);
+  ctx.moveTo(sun[0],0); ctx.lineTo(sun[0],h); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = "12px Arial";
+  ctx.fillStyle = "#a1bcd2";
+  ctx.fillText("+x",w-32,sun[1]-9);
+  ctx.fillText("+y",sun[0]+8,19);
+
+  // Analytical reference ellipse is only for display. Motion comes from Verlet.
+  ctx.beginPath();
+  for (let j=0;j<=400;j++) {
+    const E = 2*Math.PI*j/400;
+    const point = px([s.a*(Math.cos(E)-s.e),s.a*Math.sqrt(1-s.e*s.e)*Math.sin(E)]);
+    j === 0 ? ctx.moveTo(...point) : ctx.lineTo(...point);
+  }
+  ctx.strokeStyle = "#8aa4c4";
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+
+  // Render coloured, time-delimited swept sectors.
+  s.sectors.forEach((sec,i) => {
+    if (!sec || sec.vertices.length<2) return;
+    ctx.beginPath(); ctx.moveTo(...sun);
+    sec.vertices.forEach(v => ctx.lineTo(...px(v)));
+    ctx.closePath();
+    ctx.fillStyle = i%2 ? "#68d4e333" : "#ac91f74a";
+    ctx.fill();
+  });
+
+  const peri = px([s.a*(1-s.e),0]);
+  const aphe = px([-s.a*(1+s.e),0]);
+  for (const point of [peri,aphe]) {
+    ctx.beginPath(); ctx.arc(...point,4,0,2*Math.PI);
+    ctx.fillStyle = "#ffd798"; ctx.fill();
+  }
+  ctx.font = "11px Arial";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#f9d6a1";
+  if (s.e > 0) {
+    ctx.fillText("PERIHELION",peri[0],peri[1]-14);
+    ctx.fillText("APHELION",aphe[0],aphe[1]-14);
+  } else ctx.fillText("CIRCULAR ORBIT",peri[0],peri[1]-14);
+
+  function body(point,radius,color,glow) {
+    ctx.save();
+    ctx.shadowBlur = glow; ctx.shadowColor = color;
+    ctx.beginPath(); ctx.arc(...point,radius,0,2*Math.PI);
+    ctx.fillStyle = color; ctx.fill(); ctx.restore();
+  }
+  body(sun,11,"#ffbf65",23);
+  ctx.fillStyle = "#ffdc9f";
+  ctx.textAlign = "left"; ctx.fillText("SUN",sun[0]+15,sun[1]+5);
+  const planet = px(s.r);
+  body(planet,6.5,"#75d3ff",16);
+
+  function arrow(vec,color,label,length) {
+    // Arrows show instantaneous directions; their drawn lengths are scaled.
+    const pixelVec = [vec[0],-vec[1]];
+    const d = norm(pixelVec);
+    if (!d) return;
+    const ux = pixelVec[0]/d, uy = pixelVec[1]/d;
+    const end = [planet[0]+ux*length,planet[1]+uy*length];
+    ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(...planet); ctx.lineTo(...end); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(...end);
+    ctx.lineTo(end[0]-12*ux-5*uy,end[1]-12*uy+5*ux);
+    ctx.lineTo(end[0]-12*ux+5*uy,end[1]-12*uy-5*ux);
+    ctx.closePath(); ctx.fill();
+    ctx.font = "bold 13px Arial";
+    ctx.fillText(label,end[0]+6,end[1]-6);
+  }
+  arrow(s.v,"#57d9f1","v",Math.min(88,Math.max(47,norm(s.v)/400)));
+  arrow(s.acc,"#ff8b96","a",Math.min(76,Math.max(45,norm(s.acc)*7000)));
+}
+
+// The slider changes animation speed, not the fixed physical timestep.
+function animate(timestamp) {
+  if (!s.lastFrame) s.lastFrame = timestamp;
+  const elapsed = Math.min((timestamp-s.lastFrame)/1000,0.1);
+  s.lastFrame = timestamp;
+  if (s.playing) {
+    s.fractional += elapsed*s.N*s.speed/24;
+    const count = Math.min(1800,Math.floor(s.fractional));
+    s.fractional -= count;
+    for (let i=0;i<count;i++) integrate();
+    updateLabels();
+    draw();
+  }
+  requestAnimationFrame(animate);
+}
+
+el("ecc").addEventListener("input",ev => {s.e=Number(ev.target.value);reset();});
+el("axis").addEventListener("input",ev => {s.aAU=Number(ev.target.value);reset();});
+el("speed").addEventListener("input",ev => {s.speed=Number(ev.target.value);updateLabels();});
+el("reset").addEventListener("click",reset);
+el("toggle").addEventListener("click",() => {
+  s.playing=!s.playing;
+  el("toggle").textContent=s.playing ? "Pause" : "Play";
+});
+window.addEventListener("resize",resize);
+reset();
+resize();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
